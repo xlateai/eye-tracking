@@ -11,6 +11,23 @@ from utils import get_webcam_frame, draw_cross
 from ball_pathing import Ball
 
 
+def attention_to_image(attention: torch.Tensor) -> np.ndarray:
+    """
+    Converts a 2D attention tensor to a grayscale RGBA image array.
+
+    Args:
+        attention (Tensor): (h, w) attention weights
+
+    Returns:
+        np.ndarray: (h, w, 4) RGBA image
+    """
+    att = attention.detach().cpu().numpy()
+    att = (att - att.min()) / (att.ptp() + 1e-6)  # Normalize to 0–1
+    att_img = (att * 255).astype(np.uint8)
+    rgba = np.stack([att_img] * 3 + [np.full_like(att_img, 255)], axis=-1)
+    return rgba
+
+
 class EfficientEyeTracker(nn.Module):
     def __init__(self, h, w):
         super().__init__()
@@ -19,7 +36,6 @@ class EfficientEyeTracker(nn.Module):
         self.col_weights = nn.Parameter(torch.ones(w))
 
     def forward(self, x):
-        # x: (batch, 3, h, w)
         gray = x.mean(dim=1, keepdim=True)  # Convert to grayscale
         weighted = gray.squeeze(1) * self.attention  # (batch, h, w)
 
@@ -42,12 +58,11 @@ class PyApp(xospy.ApplicationBase):
 
         cam_height, cam_width = get_webcam_frame().shape[:2]
 
-        # Two separate models for x and y
         self.model_x = EfficientEyeTracker(cam_height, cam_width)
         self.model_y = EfficientEyeTracker(cam_height, cam_width)
 
-        self.optimizer_x = torch.optim.RMSprop(self.model_x.parameters(), lr=0.3)
-        self.optimizer_y = torch.optim.RMSprop(self.model_y.parameters(), lr=0.3)
+        self.optimizer_x = torch.optim.Adam(self.model_x.parameters(), lr=0.1)
+        self.optimizer_y = torch.optim.Adam(self.model_y.parameters(), lr=0.1)
 
         self.loss_fn = torch.nn.MSELoss()
         self.step_count = 0
@@ -81,9 +96,8 @@ class PyApp(xospy.ApplicationBase):
         x = torch.from_numpy(cam_frame).permute(2, 0, 1).float() / 250.0
         x = x.unsqueeze(0)  # Add batch dim: (1, 3, h, w)
 
-        # Forward pass through separate models
-        pred_x = self.model_x(x)[:, 0]  # (1,)
-        pred_y = self.model_y(x)[:, 1]  # (1,)
+        pred_x = self.model_x(x)[:, 0]
+        pred_y = self.model_y(x)[:, 1]
 
         if self.training_enabled:
             target_x = torch.tensor([self.ball.pos[0] / width], dtype=torch.float32)
@@ -114,6 +128,7 @@ class PyApp(xospy.ApplicationBase):
 
         draw_cross(frame, px, py)
 
+        # Draw overlay text at top-center
         try:
             pil_img = Image.fromarray(frame, mode='RGBA')
             draw = ImageDraw.Draw(pil_img)
@@ -124,21 +139,40 @@ class PyApp(xospy.ApplicationBase):
                 font = ImageFont.load_default()
 
             text = "Click to pause training" if self.training_enabled else "Click to resume training"
-            draw.text((30, height - font_size * 2), text, font=font, fill=(255, 255, 255, 255))
+            text_width, text_height = draw.textsize(text, font=font)
+            text_x = (width - text_width) // 2
+            text_y = 20
+            draw.text((text_x, text_y), text, font=font, fill=(255, 255, 255, 255))
             frame[:] = np.array(pil_img)
         except Exception as e:
             print("Failed to draw training message:", e)
 
-        # Overlay webcam view
+        # Draw webcam and attention overlays
         start_y = height - cam_h
         start_x = (width - cam_w) // 2
+        end_y = min(start_y + cam_h, height)
+        end_x = min(start_x + cam_w, width)
+
         if 0 <= start_y < height and 0 <= start_x < width:
-            end_y = min(start_y + cam_h, height)
-            end_x = min(start_x + cam_w, width)
-            frame[start_y:end_y, start_x:end_x, :3] = cam_frame[:end_y-start_y, :end_x-start_x]
+            # Webcam feed
+            frame[start_y:end_y, start_x:end_x, :3] = cam_frame[:end_y - start_y, :end_x - start_x]
             frame[start_y:end_y, start_x:end_x, 3] = 255
 
-        frame[collision_y:collision_y+2, :, :] = [0, 255, 0, 255]
+            # Left: x attention
+            att_img_x = attention_to_image(self.model_x.attention)
+            h, w = att_img_x.shape[:2]
+            h = min(h, end_y - start_y)
+            w = min(w, start_x)
+            frame[start_y:start_y + h, 0:w] = att_img_x[:h, :w]
+
+            # Right: y attention
+            att_img_y = attention_to_image(self.model_y.attention)
+            h, w = att_img_y.shape[:2]
+            w = min(w, width - end_x)
+            h = min(h, end_y - start_y)
+            frame[start_y:start_y + h, end_x:end_x + w] = att_img_y[:h, :w]
+
+        frame[collision_y:collision_y + 2, :, :] = [0, 255, 0, 255]
 
         return frame
 
