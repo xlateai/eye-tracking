@@ -2,6 +2,7 @@
 import time
 import math
 import torch
+import torch.nn as nn
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
@@ -10,37 +11,54 @@ from utils import get_webcam_frame, draw_cross
 from ball_pathing import Ball
 
 
-class EyeTracker(torch.nn.Module):
-    def __init__(self):
+class EfficientEyeTracker(nn.Module):
+    def __init__(self, h, w):
+        """
+        Initialize the EfficientEyeTracker model.
+        
+        Args:
+            h (int): Height of the input image
+            w (int): Width of the input image
+        """
         super().__init__()
-        self.conv = torch.nn.Sequential(
-            torch.nn.Conv2d(1, 4, kernel_size=32, stride=4),
-            torch.nn.ReLU(),
-            torch.nn.Conv2d(4, 8, kernel_size=16, stride=2),
-            torch.nn.ReLU(),
-            torch.nn.Conv2d(8, 4, kernel_size=8, stride=1),
-            torch.nn.ReLU(),
-            torch.nn.Conv2d(4, 1, kernel_size=7, stride=1),
-            torch.nn.ReLU(),
-        )
-        self.decoder = torch.nn.Sequential(
-            torch.nn.AdaptiveAvgPool2d((8, 8)),
-            torch.nn.Flatten(),
-            torch.nn.Linear(64, 32),
-            torch.nn.ReLU(),
-            torch.nn.Linear(32, 16),
-            torch.nn.ReLU(),
-            torch.nn.Linear(16, 2),
-            torch.nn.Sigmoid(),
-        )
-
+        
+        # Create parameters as all 1s in the shape of (h, w)
+        self.attention = nn.Parameter(torch.ones(h, w))
+        
+        # Create row and column weight vectors
+        self.row_weights = nn.Parameter(torch.ones(h))
+        self.col_weights = nn.Parameter(torch.ones(w))
+        
     def forward(self, x):
-        x = self.conv(x)
-        x = self.decoder(x)
-        return x
+        """
+        Forward pass for the EfficientEyeTracker.
+        
+        Args:
+            x (Tensor): Input image of shape (batch_size, 1, h, w)
+            
+        Returns:
+            Tensor: Output tensor of shape (batch_size, 2)
+        """
+        
+        # Element-wise multiplication with the attention parameters
+        # Reshape x to remove channel dimension for element-wise multiplication
+        weighted = x * self.attention  # Element-wise multiplication
+        
+        # Calculate row and column sums
+        row_sum = weighted.sum(dim=2)  # Sum across columns -> shape: (batch_size, h)
+        col_sum = weighted.sum(dim=1)  # Sum across rows -> shape: (batch_size, w)
+        # Apply row and column weights
+        row_output = (row_sum * self.row_weights).sum(dim=1)  # Shape: (batch_size,)
+        col_output = (col_sum * self.col_weights).sum(dim=1)  # Shape: (batch_size,)
+        
+        # Combine outputs
+        output = torch.stack([col_output, row_output], dim=1)  # Shape: (batch_size, 2)
+        print(output)
+        
+        # Apply sigmoid to constrain output between 0 and 1
+        return torch.sigmoid(output)
 
 
-model = EyeTracker()
 
 
 class PyApp(xospy.ApplicationBase):
@@ -50,7 +68,9 @@ class PyApp(xospy.ApplicationBase):
         self.tick_count = 0
         self.ball = Ball(state.frame.width, state.frame.height)
 
-        self.model = model
+        cam_height, cam_width = get_webcam_frame().shape[:2]
+        self.model = EfficientEyeTracker(cam_height, cam_width)
+
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=0.01)
         self.loss_fn = torch.nn.MSELoss()
         self.step_count = 0
@@ -82,13 +102,14 @@ class PyApp(xospy.ApplicationBase):
             self.ball.update(dt, width, height)
             self.ball.draw(frame)
 
-        x = torch.from_numpy(cam_frame).permute(2, 0, 1).unsqueeze(0).float() / 100
+        x = torch.from_numpy(cam_frame).permute(2, 0, 1).float() / 100
+        print(x.shape)
         pred = self.model(x)
 
         if self.training_enabled:
             target_x = torch.tensor([self.ball.pos[0] / width], dtype=torch.float32)
             target_y = torch.tensor([self.ball.pos[1] / height], dtype=torch.float32)
-            target = torch.stack([target_x, target_y]).unsqueeze(0)
+            target = torch.stack([target_x, target_y])
 
             loss = self.loss_fn(pred, target)
             loss.backward()
