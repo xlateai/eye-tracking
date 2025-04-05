@@ -162,7 +162,7 @@ class PyApp(xospy.ApplicationBase):
         cam_h, cam_w, _ = cam_frame.shape
 
         # Define collision line
-        collision_y = height - 2 * cam_h
+        collision_y = height - cam_h
         self.ball.collision_y = collision_y  # update ball's collision threshold
 
         if self.training_enabled:
