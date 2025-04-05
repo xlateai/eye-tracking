@@ -44,6 +44,9 @@ class EfficientEyeTracker(nn.Module):
         # Apply main attention mask
         weighted = x * self.attention  # (B, h, w)
 
+        # apply a sine wave to weighted individually to each value
+        weighted = torch.sin(weighted)
+
         # X and Y weighted activations
         x_weighted = weighted * self.x_attention  # (B, h, w)
         y_weighted = weighted * self.y_attention  # (B, h, w)
