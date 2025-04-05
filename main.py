@@ -11,53 +11,52 @@ from utils import get_webcam_frame, draw_cross
 from ball_pathing import Ball
 
 
-
 class EfficientEyeTracker(nn.Module):
     def __init__(self, h, w):
         """
         Initialize the EfficientEyeTracker model.
-
+        
         Args:
             h (int): Height of the input image
             w (int): Width of the input image
         """
         super().__init__()
-
-        # Full attention matrices initialized to ones
+        
+        # Create parameters as all 1s in the shape of (h, w)
         self.attention = nn.Parameter(torch.ones(h, w))
-        self.x_attention = nn.Parameter(torch.ones(h, w))
-        self.y_attention = nn.Parameter(torch.ones(h, w))
-
+        
+        # Create row and column weight vectors
+        self.row_weights = nn.Parameter(torch.ones(h))
+        self.col_weights = nn.Parameter(torch.ones(w))
+        
     def forward(self, x):
         """
         Forward pass for the EfficientEyeTracker.
-
+        
         Args:
             x (Tensor): Input image of shape (batch_size, 1, h, w)
-
+            
         Returns:
             Tensor: Output tensor of shape (batch_size, 2)
         """
-        # Remove channel dimension for element-wise ops: (B, h, w)
-        x = x.squeeze(1)
+        
+        # Element-wise multiplication with the attention parameters
+        # Reshape x to remove channel dimension for element-wise multiplication
+        weighted = x * self.attention  # Element-wise multiplication
 
-        # Apply main attention mask
-        weighted = x * self.attention  # (B, h, w)
-
-        # apply a sine wave to weighted individually to each value
-        weighted = torch.sin(weighted)
-
-        # X and Y weighted activations
-        x_weighted = weighted * self.x_attention  # (B, h, w)
-        y_weighted = weighted * self.y_attention  # (B, h, w)
-
-        # Aggregate across entire spatial dimensions
-        x_out = x_weighted.mean(dim=(1, 2))  # (B,)
-        y_out = y_weighted.mean(dim=(1, 2))  # (B,)
-
-        output = torch.stack([x_out, y_out], dim=1)  # (B, 2)
+        # Calculate row and column sums
+        row_sum = weighted.mean(dim=2)  # Sum across columns -> shape: (batch_size, h)
+        col_sum = weighted.mean(dim=1)  # Sum across rows -> shape: (batch_size, w)
+        # Apply row and column weights
+        row_output = (row_sum * self.row_weights).mean(dim=1)  # Shape: (batch_size,)
+        col_output = (col_sum * self.col_weights).mean(dim=1)  # Shape: (batch_size,)
+        
+        # Combine outputs
+        output = torch.stack([col_output, row_output], dim=1)  # Shape: (batch_size, 2)
+        print(output)
+        
+        # Apply sigmoid to constrain output between 0 and 1
         return torch.sigmoid(output)
-
 
 
 
