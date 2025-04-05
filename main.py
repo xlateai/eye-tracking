@@ -71,7 +71,7 @@ class PyApp(xospy.ApplicationBase):
         cam_height, cam_width = get_webcam_frame().shape[:2]
         self.model = EfficientEyeTracker(cam_height, cam_width)
 
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=0.01)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=0.1)
         self.loss_fn = torch.nn.MSELoss()
         self.step_count = 0
         self.training_enabled = True
@@ -121,7 +121,7 @@ class PyApp(xospy.ApplicationBase):
         pred_y = min(math.floor(float(pred[0, 1].item()) * height), collision_y - 1)
 
         if self.training_enabled:
-            print(f"[{self.step_count}] loss: {loss.item():.6f} / px={pred_x}, py={pred_y}")
+            print(f"[{self.step_count}] loss: {loss.item():.6f} / px={pred_x}(tx={int(self.ball.pos[0])}), py={pred_y}(ty={int(self.ball.pos[1])})")
         else:
             print(f"px={pred_x}, py={pred_y}")
 
