@@ -1,18 +1,17 @@
 # ball_pathing.py
 import numpy as np
 import random
-import math
 
 VELOCITY = 256
+HOLD_DURATION = 5.0  # seconds
 
 
 class Ball:
     def __init__(self, width, height):
-        self.pos = np.array([width / 2, height / 2], dtype=float)
         self.radius = 30 * 0.85
-        self.speed = VELOCITY
         self.collision_y = height
-        self.target = self._pick_new_target(width, self.collision_y)
+        self.time_since_last_move = 0.0
+        self.pos = self._pick_new_target(width, self.collision_y)
 
     def _pick_new_target(self, width, height):
         return np.array([
@@ -21,13 +20,12 @@ class Ball:
         ], dtype=float)
 
     def update(self, dt, width, height):
-        if self.target[1] > self.collision_y or np.linalg.norm(self.target - self.pos) < self.speed * dt:
-            self.target = self._pick_new_target(width, self.collision_y)
+        self.time_since_last_move += dt
+        if self.time_since_last_move >= HOLD_DURATION:
+            self.pos = self._pick_new_target(width, self.collision_y)
+            self.time_since_last_move = 0.0
 
-        direction = self.target - self.pos
-        direction /= np.linalg.norm(direction)
-        self.pos += direction * self.speed * dt
-
+        # Clamp to valid region just in case
         self.pos[0] = max(self.radius, min(width - self.radius, self.pos[0]))
         self.pos[1] = max(self.radius, min(self.collision_y - self.radius, self.pos[1]))
 
