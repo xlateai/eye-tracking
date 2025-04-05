@@ -3,6 +3,7 @@ import time
 import math
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
@@ -13,52 +14,39 @@ from ball_pathing import Ball
 
 class EfficientEyeTracker(nn.Module):
     def __init__(self, h, w):
-        """
-        Initialize the EfficientEyeTracker model.
-        
-        Args:
-            h (int): Height of the input image
-            w (int): Width of the input image
-        """
         super().__init__()
-        
-        # Create parameters as all 1s in the shape of (h, w)
+        self.h = h
+        self.w = w
+
         self.attention = nn.Parameter(torch.ones(h, w))
-        
-        # Create row and column weight vectors
-        self.row_weights = nn.Parameter(torch.ones(h))
-        self.col_weights = nn.Parameter(torch.ones(w))
-        
+        self.row_mu = nn.Parameter(torch.tensor(h / 2.0))
+        self.row_logstd = nn.Parameter(torch.zeros(1))
+        self.col_mu = nn.Parameter(torch.tensor(w / 2.0))
+        self.col_logstd = nn.Parameter(torch.zeros(1))
+
     def forward(self, x):
-        """
-        Forward pass for the EfficientEyeTracker.
-        
-        Args:
-            x (Tensor): Input image of shape (batch_size, 1, h, w)
-            
-        Returns:
-            Tensor: Output tensor of shape (batch_size, 2)
-        """
-        
-        # Element-wise multiplication with the attention parameters
-        # Reshape x to remove channel dimension for element-wise multiplication
-        weighted = x * self.attention  # Element-wise multiplication
+        x = x.squeeze(0).squeeze(0)  # (h, w)
+        weighted = x * self.attention
 
-        # Calculate row and column sums
-        row_sum = weighted.mean(dim=2)  # Sum across columns -> shape: (batch_size, h)
-        col_sum = weighted.mean(dim=1)  # Sum across rows -> shape: (batch_size, w)
-        # Apply row and column weights
-        row_output = (row_sum * self.row_weights).mean(dim=1)  # Shape: (batch_size,)
-        col_output = (col_sum * self.col_weights).mean(dim=1)  # Shape: (batch_size,)
-        
-        # Combine outputs
-        output = torch.stack([col_output, row_output], dim=1)  # Shape: (batch_size, 2)
-        print(output)
-        
-        # Apply sigmoid to constrain output between 0 and 1
-        return torch.sigmoid(output)
+        row_sum = weighted.mean(dim=1)  # (h,)
+        col_sum = weighted.mean(dim=0)  # (w,)
 
+        # Sample from Normal distributions using REINFORCE
+        row_std = torch.exp(self.row_logstd)
+        col_std = torch.exp(self.col_logstd)
 
+        row_dist = torch.distributions.Normal(self.row_mu, row_std)
+        col_dist = torch.distributions.Normal(self.col_mu, col_std)
+
+        row_sample = row_dist.rsample()  # allow backprop through sample
+        col_sample = col_dist.rsample()
+
+        # Clamp and normalize
+        row_sample = row_sample.clamp(0, self.h - 1) / self.h
+        col_sample = col_sample.clamp(0, self.w - 1) / self.w
+
+        output = torch.stack([col_sample, row_sample])  # (2,)
+        return output.unsqueeze(0), row_dist, col_dist
 
 
 class PyApp(xospy.ApplicationBase):
@@ -72,7 +60,6 @@ class PyApp(xospy.ApplicationBase):
         self.model = EfficientEyeTracker(cam_height, cam_width)
 
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=0.1)
-        self.loss_fn = torch.nn.MSELoss()
         self.step_count = 0
         self.training_enabled = True
 
@@ -102,26 +89,29 @@ class PyApp(xospy.ApplicationBase):
             self.ball.update(dt, width, height)
             self.ball.draw(frame)
 
-        x = torch.from_numpy(cam_frame).permute(2, 0, 1).float() / 250
-        print(x.shape)
-        pred = self.model(x)
+        x = torch.from_numpy(cam_frame).permute(2, 0, 1).unsqueeze(0).float() / 250
+        pred, row_dist, col_dist = self.model(x)
+
+        target_x = torch.tensor([self.ball.pos[0] / width], dtype=torch.float32)
+        target_y = torch.tensor([self.ball.pos[1] / height], dtype=torch.float32)
+        target = torch.stack([target_x, target_y]).unsqueeze(0)
 
         if self.training_enabled:
-            target_x = torch.tensor([self.ball.pos[0] / width], dtype=torch.float32)
-            target_y = torch.tensor([self.ball.pos[1] / height], dtype=torch.float32)
-            target = torch.stack([target_x, target_y])
+            reward = -F.mse_loss(pred, target.detach())  # higher reward = better
 
-            loss = self.loss_fn(pred, target)
+            log_prob = row_dist.log_prob(pred[0, 1] * self.model.h) + \
+                       col_dist.log_prob(pred[0, 0] * self.model.w)
+
+            loss = -log_prob * reward  # REINFORCE objective
             loss.backward()
             self.optimizer.step()
-
             self.step_count += 1
 
         pred_x = math.floor(float(pred[0, 0].item()) * width)
         pred_y = min(math.floor(float(pred[0, 1].item()) * height), collision_y - 1)
 
         if self.training_enabled:
-            print(f"[{self.step_count}] loss: {loss.item():.6f} / px={pred_x}(tx={int(self.ball.pos[0])}), py={pred_y}(ty={int(self.ball.pos[1])})")
+            print(f"[{self.step_count}] REINFORCE loss: {loss.item():.6f} / px={pred_x}(tx={int(self.ball.pos[0])}), py={pred_y}(ty={int(self.ball.pos[1])})")
         else:
             print(f"px={pred_x}, py={pred_y}")
 
