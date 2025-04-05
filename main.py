@@ -153,6 +153,8 @@ class PyApp(xospy.ApplicationBase):
         print("Training enabled:", self.training_enabled)
 
     def tick(self, state):
+        self.optimizer.zero_grad()
+        
         self.tick_count += 1
         now = time.time()
         dt = now - self.last_time
@@ -183,7 +185,6 @@ class PyApp(xospy.ApplicationBase):
             target = torch.stack([target_x, target_y]).unsqueeze(0)
 
             loss = self.loss_fn(pred, target)
-            self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
 
