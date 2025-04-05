@@ -168,8 +168,8 @@ class PyApp(xospy.ApplicationBase):
         self.ball = Ball(state.frame.width, state.frame.height)
 
         self.model = model
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-1)
-        self.loss_fn = torch.nn.L1Loss()
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=0.01)
+        self.loss_fn = torch.nn.MSELoss()
         self.step_count = 0
         self.training_enabled = True  # starts as True
 
@@ -194,7 +194,7 @@ class PyApp(xospy.ApplicationBase):
             self.ball.update(dt, width, height)
             self.ball.draw(frame)
 
-        x = torch.from_numpy(cam_frame).permute(2, 0, 1).unsqueeze(0).float() / 255.0
+        x = torch.from_numpy(cam_frame).permute(2, 0, 1).unsqueeze(0).float() / 100
         pred = self.model(x)
 
         if self.training_enabled:
@@ -208,13 +208,17 @@ class PyApp(xospy.ApplicationBase):
             self.optimizer.step()
 
             self.step_count += 1
-            if self.step_count % 30 == 0:
-                print(f"[step {self.step_count}] loss: {loss.item():.6f}")
 
             # draw_loss_text_on_ball(frame, loss.item(), self.ball.pos[0], self.ball.pos[1])
 
-        pred_x = float(pred[0, 0].item()) * width
-        pred_y = float(pred[0, 1].item()) * height
+        pred_x = math.floor(float(pred[0, 0].item()) * width)
+        pred_y = math.floor(float(pred[0, 1].item()) * height)
+
+        if self.training_enabled:
+            print(f"[{self.step_count}] loss: {loss.item():.6f} / px={pred_x}, py={pred_y}")
+        else:
+            print(f"px={pred_x}, py={pred_y}")
+        
         draw_cross(frame, pred_x, pred_y)
 
         # --- Draw training toggle message ---
