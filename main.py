@@ -8,7 +8,7 @@ import torch
 
 
 RENDER_VIDEO = False
-VELOCITY = 64
+VELOCITY = 256
 
 
 def get_webcam_frame() -> np.ndarray:
@@ -54,22 +54,22 @@ class EyeTracker(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.conv = torch.nn.Sequential(
-            torch.nn.Conv2d(1, 1, kernel_size=32, stride=4),
-            torch.nn.Sigmoid(),
-            torch.nn.Conv2d(1, 1, kernel_size=16, stride=2),
-            torch.nn.Sigmoid(),
-            torch.nn.Conv2d(1, 1, kernel_size=8, stride=1),
-            torch.nn.Sigmoid(),
-            torch.nn.Conv2d(1, 1, kernel_size=7, stride=1),
-            torch.nn.Sigmoid(),
+            torch.nn.Conv2d(1, 4, kernel_size=32, stride=4),
+            torch.nn.ReLU(),
+            torch.nn.Conv2d(4, 8, kernel_size=16, stride=2),
+            torch.nn.ReLU(),
+            torch.nn.Conv2d(8, 4, kernel_size=8, stride=1),
+            torch.nn.ReLU(),
+            torch.nn.Conv2d(4, 1, kernel_size=7, stride=1),
+            torch.nn.ReLU(),
         )
         self.decoder = torch.nn.Sequential(
             torch.nn.AdaptiveAvgPool2d((8, 8)),
             torch.nn.Flatten(),
             torch.nn.Linear(64, 32),
-            torch.nn.Sigmoid(),
+            torch.nn.ReLU(),
             torch.nn.Linear(32, 16),
-            torch.nn.Sigmoid(),
+            torch.nn.ReLU(),
             torch.nn.Linear(16, 2),
             torch.nn.Sigmoid(),
         )
