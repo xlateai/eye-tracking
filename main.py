@@ -64,14 +64,19 @@ class EyeTracker(torch.nn.Module):
             torch.nn.Sigmoid(),
         )
         self.decoder = torch.nn.Sequential(
-            torch.nn.AdaptiveAvgPool2d((3, 3)),
+            torch.nn.AdaptiveAvgPool2d((8, 8)),
             torch.nn.Flatten(),
-            torch.nn.Linear(9, 2),
+            torch.nn.Linear(64, 32),
+            torch.nn.Sigmoid(),
+            torch.nn.Linear(32, 16),
+            torch.nn.Sigmoid(),
+            torch.nn.Linear(16, 2),
             torch.nn.Sigmoid(),
         )
 
     def forward(self, x):
         x = self.conv(x)
+        # print(f"- conv out shape: {x.shape}")
         x = self.decoder(x)
         return x
 
