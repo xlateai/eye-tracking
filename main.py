@@ -45,11 +45,11 @@ class EfficientEyeTracker(nn.Module):
         weighted = x * self.attention  # Element-wise multiplication
         
         # Calculate row and column sums
-        row_sum = weighted.sum(dim=2)  # Sum across columns -> shape: (batch_size, h)
-        col_sum = weighted.sum(dim=1)  # Sum across rows -> shape: (batch_size, w)
+        row_sum = weighted.mean(dim=2)  # Sum across columns -> shape: (batch_size, h)
+        col_sum = weighted.mean(dim=1)  # Sum across rows -> shape: (batch_size, w)
         # Apply row and column weights
-        row_output = (row_sum * self.row_weights).sum(dim=1)  # Shape: (batch_size,)
-        col_output = (col_sum * self.col_weights).sum(dim=1)  # Shape: (batch_size,)
+        row_output = (row_sum * self.row_weights).mean(dim=1)  # Shape: (batch_size,)
+        col_output = (col_sum * self.col_weights).mean(dim=1)  # Shape: (batch_size,)
         
         # Combine outputs
         output = torch.stack([col_output, row_output], dim=1)  # Shape: (batch_size, 2)
@@ -102,7 +102,7 @@ class PyApp(xospy.ApplicationBase):
             self.ball.update(dt, width, height)
             self.ball.draw(frame)
 
-        x = torch.from_numpy(cam_frame).permute(2, 0, 1).float() / 100
+        x = torch.from_numpy(cam_frame).permute(2, 0, 1).float() / 250
         print(x.shape)
         pred = self.model(x)
 
