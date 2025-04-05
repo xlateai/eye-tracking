@@ -46,8 +46,8 @@ class PyApp(xospy.ApplicationBase):
         self.model_x = EfficientEyeTracker(cam_height, cam_width)
         self.model_y = EfficientEyeTracker(cam_height, cam_width)
 
-        self.optimizer_x = torch.optim.Adam(self.model_x.parameters(), lr=0.1)
-        self.optimizer_y = torch.optim.Adam(self.model_y.parameters(), lr=0.1)
+        self.optimizer_x = torch.optim.RMSprop(self.model_x.parameters(), lr=0.3)
+        self.optimizer_y = torch.optim.RMSprop(self.model_y.parameters(), lr=0.3)
 
         self.loss_fn = torch.nn.MSELoss()
         self.step_count = 0
