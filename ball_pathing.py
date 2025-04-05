@@ -2,7 +2,7 @@
 import numpy as np
 import random
 
-HOLD_DURATION = 5.0  # seconds
+HOLD_DURATION = 3.0  # seconds
 
 
 class Ball:
