@@ -171,6 +171,11 @@ class PyApp(xospy.ApplicationBase):
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-1)
         self.loss_fn = torch.nn.L1Loss()
         self.step_count = 0
+        self.training_enabled = True  # starts as True
+
+    def on_mouse_down(self, state):
+        self.training_enabled = not self.training_enabled
+        print("Training enabled:", self.training_enabled)
 
     def tick(self, state):
         self.tick_count += 1
@@ -183,31 +188,50 @@ class PyApp(xospy.ApplicationBase):
         frame = np.frombuffer(mv, dtype=np.uint8).reshape((height, width, 4))
         frame[:] = 0
 
-        self.ball.update(dt, width, height)
-        self.ball.draw(frame)
-
         cam_frame = get_webcam_frame()
-        x = torch.from_numpy(cam_frame).permute(2, 0, 1).unsqueeze(0).float() / 255.0
 
+        if self.training_enabled:
+            self.ball.update(dt, width, height)
+            self.ball.draw(frame)
+
+        x = torch.from_numpy(cam_frame).permute(2, 0, 1).unsqueeze(0).float() / 255.0
         pred = self.model(x)
 
-        target_x = torch.tensor([self.ball.pos[0] / width], dtype=torch.float32)
-        target_y = torch.tensor([self.ball.pos[1] / height], dtype=torch.float32)
-        target = torch.stack([target_x, target_y]).unsqueeze(0)
+        if self.training_enabled:
+            target_x = torch.tensor([self.ball.pos[0] / width], dtype=torch.float32)
+            target_y = torch.tensor([self.ball.pos[1] / height], dtype=torch.float32)
+            target = torch.stack([target_x, target_y]).unsqueeze(0)
 
-        loss = self.loss_fn(pred, target)
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
+            loss = self.loss_fn(pred, target)
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
 
-        self.step_count += 1
-        if self.step_count % 30 == 0:
-            print(f"[step {self.step_count}] loss: {loss.item():.6f}")
+            self.step_count += 1
+            if self.step_count % 30 == 0:
+                print(f"[step {self.step_count}] loss: {loss.item():.6f}")
+
+            # draw_loss_text_on_ball(frame, loss.item(), self.ball.pos[0], self.ball.pos[1])
 
         pred_x = float(pred[0, 0].item()) * width
         pred_y = float(pred[0, 1].item()) * height
         draw_cross(frame, pred_x, pred_y)
-        # draw_loss_text_on_ball(frame, loss.item(), self.ball.pos[0], self.ball.pos[1])
+
+        # --- Draw training toggle message ---
+        try:
+            pil_img = Image.fromarray(frame, mode='RGBA')
+            draw = ImageDraw.Draw(pil_img)
+            try:
+                font_size = 48
+                font = ImageFont.truetype("Arial.ttf", font_size)
+            except:
+                font = ImageFont.load_default()
+
+            text = "Click to pause training" if self.training_enabled else "Click to resume training"
+            draw.text((30, height - font_size * 2), text, font=font, fill=(255, 255, 255, 255))
+            frame[:] = np.array(pil_img)
+        except Exception as e:
+            print("Failed to draw training message:", e)
 
         # --- Render webcam feed in bottom zone ---
         cam_h, cam_w, _ = cam_frame.shape
@@ -221,6 +245,7 @@ class PyApp(xospy.ApplicationBase):
             frame[start_y:end_y, start_x:end_x, 3] = 255
 
         return frame
+
 
 
 xospy.run_py_game(PyApp(), web=False, react_native=False)
