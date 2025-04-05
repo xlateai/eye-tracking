@@ -7,7 +7,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 import xospy
 from utils import get_webcam_frame, draw_cross
-from ball_pathing import Ball, VELOCITY
+from ball_pathing import Ball
 
 
 class EyeTracker(torch.nn.Module):
