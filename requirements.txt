@@ -1,4 +1,4 @@
-xospy==0.1.2
+xospy==0.1.21
 backports.tarfile==1.2.0
 certifi==2025.1.31
 charset-normalizer==3.4.1
