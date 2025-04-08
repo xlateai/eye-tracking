@@ -1,64 +1,13 @@
-# main.py
 import time
 import math
 import torch
-import torch.nn as nn
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 import xospy
 from utils import get_webcam_frame, draw_cross
 from ball_pathing import Ball
-
-
-class EfficientEyeTracker(nn.Module):
-    def __init__(self, h, w):
-        """
-        Initialize the EfficientEyeTracker model.
-        
-        Args:
-            h (int): Height of the input image
-            w (int): Width of the input image
-        """
-        super().__init__()
-        
-        # Create parameters as all 1s in the shape of (h, w)
-        self.attention = nn.Parameter(torch.ones(h, w))
-        
-        # Create row and column weight vectors
-        self.row_weights = nn.Parameter(torch.ones(h))
-        self.col_weights = nn.Parameter(torch.ones(w))
-        
-    def forward(self, x):
-        """
-        Forward pass for the EfficientEyeTracker.
-        
-        Args:
-            x (Tensor): Input image of shape (batch_size, 1, h, w)
-            
-        Returns:
-            Tensor: Output tensor of shape (batch_size, 2)
-        """
-        
-        # Element-wise multiplication with the attention parameters
-        # Reshape x to remove channel dimension for element-wise multiplication
-        weighted = x * self.attention  # Element-wise multiplication
-
-        # Calculate row and column sums
-        row_sum = weighted.mean(dim=2)  # Sum across columns -> shape: (batch_size, h)
-        col_sum = weighted.mean(dim=1)  # Sum across rows -> shape: (batch_size, w)
-        # Apply row and column weights
-        row_output = (row_sum * self.row_weights).mean(dim=1)  # Shape: (batch_size,)
-        col_output = (col_sum * self.col_weights).mean(dim=1)  # Shape: (batch_size,)
-        
-        # Combine outputs
-        output = torch.stack([col_output, row_output], dim=1)  # Shape: (batch_size, 2)
-        print(output)
-        
-        # Apply sigmoid to constrain output between 0 and 1
-        return torch.sigmoid(output)
-
-
+from model import EfficientEyeTracker
 
 
 class PyApp(xospy.ApplicationBase):
@@ -70,9 +19,6 @@ class PyApp(xospy.ApplicationBase):
 
         cam_height, cam_width = get_webcam_frame().shape[:2]
         self.model = EfficientEyeTracker(cam_height, cam_width)
-
-        self.optimizer = torch.optim.RMSprop(self.model.parameters(), lr=0.2)
-        self.loss_fn = torch.nn.MSELoss()
         self.step_count = 0
         self.training_enabled = True
 
@@ -81,7 +27,6 @@ class PyApp(xospy.ApplicationBase):
         print("Training enabled:", self.training_enabled)
 
     def tick(self, state):
-        self.optimizer.zero_grad()
         self.tick_count += 1
         now = time.time()
         dt = now - self.last_time
@@ -102,26 +47,24 @@ class PyApp(xospy.ApplicationBase):
             self.ball.update(dt, width, height)
             self.ball.draw(frame)
 
+        # Preprocess input
         x = torch.from_numpy(cam_frame).permute(2, 0, 1).float() / 250
-        print(x.shape)
-        pred = self.model(x)
 
         if self.training_enabled:
             target_x = torch.tensor([self.ball.pos[0] / width], dtype=torch.float32)
             target_y = torch.tensor([self.ball.pos[1] / height], dtype=torch.float32)
-            target = torch.stack([target_x, target_y])
+            target = torch.stack([target_x, target_y]).unsqueeze(0)  # Shape: (1, 2)
 
-            loss = self.loss_fn(pred, target)
-            loss.backward()
-            self.optimizer.step()
-
+            loss, pred = self.model.update(x, target)
             self.step_count += 1
+        else:
+            pred = self.model.predict(x)
 
         pred_x = math.floor(float(pred[0, 0].item()) * width)
         pred_y = min(math.floor(float(pred[0, 1].item()) * height), collision_y - 1)
 
         if self.training_enabled:
-            print(f"[{self.step_count}] loss: {loss.item():.6f} / px={pred_x}(tx={int(self.ball.pos[0])}), py={pred_y}(ty={int(self.ball.pos[1])})")
+            print(f"[{self.step_count}] loss: {loss:.6f} / px={pred_x}(tx={int(self.ball.pos[0])}), py={pred_y}(ty={int(self.ball.pos[1])})")
         else:
             print(f"px={pred_x}, py={pred_y}")
 
@@ -142,6 +85,7 @@ class PyApp(xospy.ApplicationBase):
         except Exception as e:
             print("Failed to draw training message:", e)
 
+        # Draw camera feed
         start_y = height - cam_h
         start_x = (width - cam_w) // 2
 
