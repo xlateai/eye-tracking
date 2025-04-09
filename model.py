@@ -156,7 +156,7 @@ class AvgOptimizationTracker:
             Tensor: prediction
         """
 
-        return attn_forward(x, self.avg_attention.unsqueeze(0), self.avg_row_weights.unsqueeze(0), self.avg_col_weights.unsqueeze(0))
+        return attn_forward(x, self.avg_attention.unsqueeze(0), self.avg_row_weights.unsqueeze(0), self.avg_col_weights.unsqueeze(0)).squeeze()
 
     def forward(self, *args):
         raise NotImplementedError
