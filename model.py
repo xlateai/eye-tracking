@@ -13,21 +13,32 @@ class EfficientEyeTracker(nn.Module):
             lr (float): Learning rate for the optimizer
         """
         super().__init__()
-        self.attention = nn.Parameter(torch.ones(h, w))
-        self.row_weights = nn.Parameter(torch.ones(h))
-        self.col_weights = nn.Parameter(torch.ones(w))
+
+        self.encoder = torch.nn.Sequential(
+            nn.Conv2d(1, 3, kernel_size=9, stride=5),
+            nn.ReLU(),
+            nn.Conv2d(3, 3, kernel_size=7, stride=3),
+            nn.ReLU(),
+            nn.Conv2d(3, 1, kernel_size=3, stride=2),
+            nn.ReLU(),
+            nn.Flatten(),
+        )
+
+        self.predictor = torch.nn.Sequential(
+            # adapative pooling
+            nn.AdaptiveAvgPool2d((3, 3)),
+            nn.Flatten(),
+            nn.Linear(1 * 3 * 3, 2),
+        )
 
         self.optimizer = torch.optim.RMSprop(self.parameters(), lr=lr)
         self.loss_fn = nn.MSELoss()
 
     def forward(self, x):
-        weighted = x * self.attention  # (1, H, W)
-        row_sum = weighted.mean(dim=2)  # (1, H)
-        col_sum = weighted.mean(dim=1)  # (1, W)
-        row_output = (row_sum * self.row_weights).mean(dim=1)  # (1,)
-        col_output = (col_sum * self.col_weights).mean(dim=1)  # (1,)
-        output = torch.stack([col_output, row_output], dim=1)  # (1, 2)
-        return torch.sigmoid(output)
+        emb = self.encoder(x)
+        print('emb shape', emb.shape)
+        preds = self.predictor(emb)
+        return torch.sigmoid(preds)
 
     def predict(self, x):
         self.eval()
