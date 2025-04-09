@@ -7,7 +7,7 @@ from PIL import Image, ImageDraw, ImageFont
 import xospy
 from utils import get_webcam_frame, draw_cross
 from ball_pathing import Ball
-from model import EfficientEyeTracker
+from model import AvgOptimizationTracker # EfficientEyeTracker
 
 
 class PyApp(xospy.ApplicationBase):
@@ -18,7 +18,7 @@ class PyApp(xospy.ApplicationBase):
         self.ball = Ball(state.frame.width, state.frame.height)
 
         cam_height, cam_width = get_webcam_frame().shape[:2]
-        self.model = EfficientEyeTracker(cam_height, cam_width)
+        self.model = AvgOptimizationTracker(cam_height, cam_width)
         self.step_count = 0
         self.training_enabled = True
 
@@ -53,15 +53,15 @@ class PyApp(xospy.ApplicationBase):
         if self.training_enabled:
             target_x = torch.tensor([self.ball.pos[0] / width], dtype=torch.float32)
             target_y = torch.tensor([self.ball.pos[1] / height], dtype=torch.float32)
-            target = torch.stack([target_x, target_y]).unsqueeze(0)  # Shape: (1, 2)
+            target = torch.stack([target_x, target_y])
 
             loss, pred = self.model.update(x, target)
             self.step_count += 1
         else:
             pred = self.model.predict(x)
 
-        pred_x = math.floor(float(pred[0, 0].item()) * width)
-        pred_y = min(math.floor(float(pred[0, 1].item()) * height), collision_y - 1)
+        pred_x = math.floor(float(pred[0].item()) * width)
+        pred_y = min(math.floor(float(pred[1].item()) * height), collision_y - 1)
 
         if self.training_enabled:
             print(f"[{self.step_count}] loss: {loss:.6f} / px={pred_x}(tx={int(self.ball.pos[0])}), py={pred_y}(ty={int(self.ball.pos[1])})")

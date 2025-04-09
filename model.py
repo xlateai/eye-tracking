@@ -61,7 +61,7 @@ class EfficientEyeTracker(nn.Module):
 
 
 class AvgOptimizationTracker:
-    def __init__(self, h: int, w: int, k: int):
+    def __init__(self, h: int, w: int, k: int=32):
         """
         This model works by randomizing the weights at each train prediction.
         The randomized weights are then weighted by their performance and tracked using a running
@@ -100,6 +100,8 @@ class AvgOptimizationTracker:
             float: Loss value, Tensor: prediction
         """
 
+        target = target.squeeze()
+
         # random uniform weights k, h, w for atn
         rand_attention = torch.rand(self.k, self.h, self.w)
         rand_row_weights = torch.rand(self.k, self.h)
@@ -110,6 +112,7 @@ class AvgOptimizationTracker:
         # calculate error between preds and singular target
         # NOTE: it's very important that this distance remain signed (not MAE or MSE)
         # this is to ensure that averages will result in 0 if the mean is correct
+        print(preds.shape, target.shape)
         errors = (preds - target)
 
         # scalar value per pred so we can form our quality weights
@@ -140,7 +143,7 @@ class AvgOptimizationTracker:
         self._avg_row_weights_sum += avg_row_weights
         self._avg_col_weights_sum += avg_col_weights
 
-        return errors.mean(dim=0), preds.mean(dim=0)
+        return errors.mean(dim=0).item(), preds.mean(dim=0)
 
     def predict(self, x):
         """
