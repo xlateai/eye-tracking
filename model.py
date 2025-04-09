@@ -143,7 +143,7 @@ class AvgOptimizationTracker:
         self._avg_row_weights_sum += avg_row_weights
         self._avg_col_weights_sum += avg_col_weights
 
-        return errors.mean(dim=0).item(), preds.mean(dim=0)
+        return errors.mean(dim=0).item(), self.predict(x)
 
     def predict(self, x):
         """
