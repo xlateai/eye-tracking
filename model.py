@@ -3,7 +3,7 @@ import torch.nn as nn
 
 
 class EfficientEyeTracker(nn.Module):
-    def __init__(self, h, w, lr=0.2):
+    def __init__(self, h, w, lr=0.1):
         """
         Initialize the EfficientEyeTracker model and its training components.
 
@@ -15,23 +15,33 @@ class EfficientEyeTracker(nn.Module):
         super().__init__()
 
         self.encoder = torch.nn.Sequential(
-            nn.Conv2d(1, 3, kernel_size=9, stride=5),
-            nn.ReLU(),
-            nn.Conv2d(3, 3, kernel_size=7, stride=3),
-            nn.ReLU(),
-            nn.Conv2d(3, 1, kernel_size=3, stride=2),
-            nn.ReLU(),
-            nn.Flatten(),
+            nn.Conv2d(1, 3, kernel_size=7, stride=3),
+            nn.Sigmoid(),
+            nn.Conv2d(3, 3, kernel_size=5, stride=2),
+            nn.Sigmoid(),
+            nn.Conv2d(3, 1, kernel_size=3, stride=1),
+            nn.Sigmoid(),
         )
+
+        # let's get the output shape of the encoder
+        x = torch.randn(1, 1, h, w)
+        x = self.encoder(x)
+        features = x.shape.numel()
+        print(features, "conv features")
 
         self.predictor = torch.nn.Sequential(
             # adapative pooling
-            nn.AdaptiveAvgPool2d((3, 3)),
+            #nn.AdaptiveAvgPool2d((3, 3)),
             nn.Flatten(),
-            nn.Linear(1 * 3 * 3, 2),
+            nn.Linear(features, 256),
+            nn.Sigmoid(),
+            nn.Linear(256, 64),
+            nn.Sigmoid(),
+            nn.Linear(64, 2),
+            nn.Sigmoid(),
         )
 
-        self.optimizer = torch.optim.RMSprop(self.parameters(), lr=lr)
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=lr)
         self.loss_fn = nn.MSELoss()
 
     def forward(self, x):
