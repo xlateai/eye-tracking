@@ -88,7 +88,7 @@ class AvgOptimizationTracker:
     def avg_col_weights(self):
         return self._avg_col_weights_sum / self.num_steps
     
-    def train_forward(self, x):
+    def train_forward(self, x, target):
         """
         Perform one training step.
 
@@ -108,11 +108,18 @@ class AvgOptimizationTracker:
         col_weights = torch.rand(self.k, self.w)
 
         preds = attn_forward(x, attention, row_weights, col_weights)
+        
+        # calculate error between preds and singular target
+        # NOTE: it's very important that this distance remain signed (not MAE or MSE)
+        # this is to ensure that averages will result in 0 if the mean is correct
+        errors = (preds - target)
+        print(errors)
         return preds
 
 
 if __name__ == "__main__":
     model = AvgOptimizationTracker(h=64, w=64, k=16)
     x = torch.rand(64, 64)
-    pred = model.train_forward(x)
-    print(pred.shape)
+    t = torch.rand(2)
+    pred = model.train_forward(x, t)
+    # print(pred.shape)
