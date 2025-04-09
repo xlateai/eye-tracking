@@ -100,8 +100,6 @@ class AvgOptimizationTracker:
             float: Loss value, Tensor: prediction
         """
 
-        self.num_steps += 1
-
         # random uniform weights k, h, w for atn
         rand_attention = torch.rand(self.k, self.h, self.w)
         rand_row_weights = torch.rand(self.k, self.h)
@@ -113,30 +111,41 @@ class AvgOptimizationTracker:
         # NOTE: it's very important that this distance remain signed (not MAE or MSE)
         # this is to ensure that averages will result in 0 if the mean is correct
         errors = (preds - target)
-        print(errors)
 
         # scalar value per pred so we can form our quality weights
-        errors = errors.mean(dim=1).unsqueeze(-1).unsqueeze(-1)
-
-        print(errors.shape)
+        errors = errors.mean(dim=1).unsqueeze(-1)
 
         # now, we need to find the weighted average of the attention, row_weights, and col_weights
         # with respect to these errors such that we can use them to update our running average
         # sums
         
         # basically, we need to reduce the self.k dimension to 1 by using the errors as dot-product weights
-        print(rand_attention.shape, errors.shape)
-        avg_attention = torch.mean(rand_attention * errors, dim=0)
-        print(avg_attention)
+        avg_attention = torch.mean(rand_attention * errors.unsqueeze(-1), dim=0)
+        avg_row_weights = torch.mean(rand_row_weights * errors, dim=0)
+        avg_col_weights = torch.mean(rand_col_weights * errors, dim=0)
 
+        print("avg_attention", avg_attention.shape)
+        print("avg_row_weights", avg_row_weights.shape)
+        print("avg_col_weights", avg_col_weights.shape)
 
+        # an interesting hypothesis:
+        # if we were to use these average weights to calculate predictions,
+        # the error should approximately be equal to the average of the errors?
+        # TODO: LET'S TEST THIS HYPTOTHESIS SCIENTIFICALLY!
+        # would also be fun to do some mathematical analysis of this.
 
-        return preds
+        # update the running average sums
+        self.num_steps += 1
+        self._avg_attention_sum += avg_attention
+        self._avg_row_weights_sum += avg_row_weights
+        self._avg_col_weights_sum += avg_col_weights
+
+        return preds.mean(dim=0), errors.mean(dim=0)
 
 
 if __name__ == "__main__":
     model = AvgOptimizationTracker(h=64, w=64, k=16)
     x = torch.rand(64, 64)
     t = torch.rand(2)
-    pred = model.train_forward(x, t)
-    # print(pred.shape)
+    pred, err = model.train_forward(x, t)
+    print(pred, err)
