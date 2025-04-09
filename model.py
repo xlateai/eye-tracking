@@ -88,7 +88,7 @@ class AvgOptimizationTracker:
     def avg_col_weights(self):
         return self._avg_col_weights_sum / self.num_steps
     
-    def train_forward(self, x, target):
+    def update(self, x, target):
         """
         Perform one training step.
 
@@ -140,12 +140,31 @@ class AvgOptimizationTracker:
         self._avg_row_weights_sum += avg_row_weights
         self._avg_col_weights_sum += avg_col_weights
 
-        return preds.mean(dim=0), errors.mean(dim=0)
+        return errors.mean(dim=0), preds.mean(dim=0)
+
+    def predict(self, x):
+        """
+        Perform one prediction step.
+
+        Args:
+            x (Tensor): Input tensor of shape (1, H, W)
+
+        Returns:
+            Tensor: prediction
+        """
+
+        return attn_forward(x, self.avg_attention.unsqueeze(0), self.avg_row_weights.unsqueeze(0), self.avg_col_weights.unsqueeze(0))
+
+    def forward(self, *args):
+        raise NotImplementedError
 
 
 if __name__ == "__main__":
     model = AvgOptimizationTracker(h=64, w=64, k=16)
     x = torch.rand(64, 64)
     t = torch.rand(2)
-    pred, err = model.train_forward(x, t)
+    pred, err = model.update(x, t)
     print(pred, err)
+
+    pred = model.predict(x)
+    print(pred)
