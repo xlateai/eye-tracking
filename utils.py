@@ -4,7 +4,7 @@ from PIL import Image
 import xospy
 
 
-def get_webcam_frame(height: int=512) -> np.ndarray:
+def get_webcam_frame(height: int=256) -> np.ndarray:
     cam_w, _ = xospy.video.webcam.get_resolution()
     cam_bytes = xospy.video.webcam.get_frame()
     bytes_per_pixel = 3
