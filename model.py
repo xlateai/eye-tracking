@@ -10,14 +10,6 @@ def dct_2d_numpy(x_np):
     return x_np
 
 
-def attention_to_image(attention: torch.Tensor) -> np.ndarray:
-    att = attention.detach().cpu().numpy()
-    att = (att - att.min()) / (att.ptp() + 1e-6)
-    att_img = (att * 255).astype(np.uint8)
-    rgba = np.stack([att_img] * 3 + [np.full_like(att_img, 255)], axis=-1)
-    return rgba
-
-
 class EfficientEyeTracker(nn.Module):
     def __init__(self, h, w, lr=0.1):
         super().__init__()

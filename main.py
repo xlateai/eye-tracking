@@ -7,7 +7,7 @@ from PIL import Image, ImageDraw, ImageFont
 import xospy
 from utils import get_webcam_frame, draw_cross
 from ball_pathing import Ball
-from model import EfficientEyeTracker, attention_to_image
+from model import EfficientEyeTracker
 
 
 class PyApp(xospy.ApplicationBase):
@@ -94,13 +94,13 @@ class PyApp(xospy.ApplicationBase):
             frame[start_y:end_y, start_x:end_x, :3] = cam_frame[:end_y - start_y, :end_x - start_x]
             frame[start_y:end_y, start_x:end_x, 3] = 255
 
-            att_img = attention_to_image(self.model.attention)
-            h, w = att_img.shape[:2]
-            h = min(h, end_y - start_y)
-            w_half = min(w // 2, start_x, width - end_x)
+            # att_img = attention_to_image(self.model.attention)
+            # h, w = att_img.shape[:2]
+            # h = min(h, end_y - start_y)
+            # w_half = min(w // 2, start_x, width - end_x)
 
-            frame[start_y:start_y + h, 0:w_half] = att_img[:h, :w_half]
-            frame[start_y:start_y + h, end_x:end_x + w_half] = att_img[:h, -w_half:]
+            # frame[start_y:start_y + h, 0:w_half] = att_img[:h, :w_half]
+            # frame[start_y:start_y + h, end_x:end_x + w_half] = att_img[:h, -w_half:]
 
         frame[collision_y:collision_y + 2, :, :] = [0, 255, 0, 255]
 
