@@ -2,6 +2,7 @@ import time
 import numpy as np
 import xospy
 from utils import get_webcam_frame
+import cv2
 
 
 class CamDeltaApp(xospy.ApplicationBase):
@@ -24,18 +25,20 @@ class CamDeltaApp(xospy.ApplicationBase):
         delta = current_frame.astype(np.int16) - self.last_frame.astype(np.int16)
         self.last_frame = current_frame
 
-        # Resize delta image to fit the screen
-        cam_h, cam_w, _ = delta.shape
-        start_y = height - cam_h
-        start_x = (width - cam_w) // 2
-        end_y = min(start_y + cam_h, height)
-        end_x = min(start_x + cam_w, width)
+        # Normalize delta to 0–255 and clip
+        delta = np.clip((delta + 128), 0, 255).astype(np.uint8)
 
-        if 0 <= start_y < height and 0 <= start_x < width:
-            frame[start_y:end_y, start_x:end_x, :3] = delta[:end_y - start_y, :end_x - start_x]
-            frame[start_y:end_y, start_x:end_x, 3] = 255
+        # Resize delta frame to fill the screen
+        delta_resized = cv2.resize(delta, (width, height), interpolation=cv2.INTER_LINEAR)
+        delta_resized = cv2.cvtColor(delta_resized, cv2.COLOR_GRAY2RGB)
+
+        # Fill RGB channels
+        frame[:, :, :3] = delta_resized
+        frame[:, :, 3] = 255  # Full alpha
 
         return frame
+
+
 
 
 xospy.run_py_game(CamDeltaApp(), web=False, react_native=False)
