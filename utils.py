@@ -1,10 +1,10 @@
 # utils.py
 import numpy as np
 from PIL import Image
+import xospy
 
 
-def get_webcam_frame() -> np.ndarray:
-    import xospy
+def get_webcam_frame(height: int=512) -> np.ndarray:
     cam_w, _ = xospy.video.webcam.get_resolution()
     cam_bytes = xospy.video.webcam.get_frame()
     bytes_per_pixel = 3
@@ -16,9 +16,9 @@ def get_webcam_frame() -> np.ndarray:
 
     cam_array = np.frombuffer(cam_bytes, dtype=np.uint8).reshape((cam_h, cam_w, 3))
 
-    scale = cam_h / 256
+    scale = cam_h / height
     new_w = int(cam_w / scale)
-    new_h = 256
+    new_h = height
     cam_array = np.array(Image.fromarray(cam_array).resize((new_w, new_h), Image.LANCZOS))
 
     cam_array = cam_array[:, ::-1]  # horizontal flip
