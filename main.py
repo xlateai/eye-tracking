@@ -73,10 +73,10 @@ class PyApp(xospy.ApplicationBase):
         self.model_x = EfficientEyeTracker(cam_height, cam_width)
         self.model_y = EfficientEyeTracker(cam_height, cam_width)
 
-        self.optimizer_x = torch.optim.RMSprop(self.model_x.parameters(), lr=0.05)
-        self.optimizer_y = torch.optim.RMSprop(self.model_y.parameters(), lr=0.05)
+        self.optimizer_x = torch.optim.Adam(self.model_x.parameters(), lr=0.1)
+        self.optimizer_y = torch.optim.Adam(self.model_y.parameters(), lr=0.1)
 
-        self.loss_fn = torch.nn.MSELoss()
+        self.loss_fn = torch.nn.L1Loss()
         self.step_count = 0
         self.training_enabled = True
 
@@ -103,7 +103,6 @@ class PyApp(xospy.ApplicationBase):
 
         if self.training_enabled:
             self.ball.update(dt, width, height)
-            self.ball.draw(frame)
 
         x = torch.from_numpy(cam_frame).permute(2, 0, 1).float() / 250.0
         x = x.unsqueeze(0)  # Add batch dim: (1, 3, h, w)
@@ -130,15 +129,13 @@ class PyApp(xospy.ApplicationBase):
             self.step_count += 1
 
         px = math.floor(float(pred_x.item()) * width)
-        py = min(math.floor(float(pred_y.item()) * height), collision_y - 1)
+        py = math.floor(float(pred_y.item()) * height)
 
         if self.training_enabled:
             print(f"[{self.step_count}] loss_x: {loss_x.item():.6f} / px={px}(tx={int(self.ball.pos[0])}), "
                   f"loss_y: {loss_y.item():.6f} / py={py}(ty={int(self.ball.pos[1])})")
         else:
             print(f"px={px}, py={py}")
-
-        draw_cross(frame, px, py)
 
         # Draw overlay text at top-center
         try:
@@ -185,6 +182,11 @@ class PyApp(xospy.ApplicationBase):
             frame[start_y:start_y + h, end_x:end_x + w] = att_img_y[:h, :w]
 
         frame[collision_y:collision_y + 2, :, :] = [0, 255, 0, 255]
+
+        if self.training_enabled:
+            self.ball.draw(frame)
+
+        draw_cross(frame, px, py)
 
         return frame
 

@@ -28,16 +28,34 @@ def get_webcam_frame() -> np.ndarray:
     return cam_array
 
 
-def draw_cross(frame: np.ndarray, x: float, y: float, size: int = 10, color=(255, 0, 0, 255)):
+def draw_cross(
+    frame: np.ndarray,
+    x: float,
+    y: float,
+    size: int = 10,
+    color=(255, 0, 0, 255),
+    thickness: int = 3,
+):
     height, width, _ = frame.shape
     x, y = int(x), int(y)
 
+    half_thick = thickness // 2
+
+    # Horizontal line
     for dx in range(-size, size + 1):
         xi = x + dx
-        if 0 <= xi < width and 0 <= y < height:
-            frame[y, xi] = color
+        if 0 <= xi < width:
+            for dy in range(-half_thick, half_thick + 1):
+                yi = y + dy
+                if 0 <= yi < height:
+                    frame[yi, xi] = color
 
+    # Vertical line
     for dy in range(-size, size + 1):
         yi = y + dy
-        if 0 <= x < width and 0 <= yi < height:
-            frame[yi, x] = color
+        if 0 <= yi < height:
+            for dx in range(-half_thick, half_thick + 1):
+                xi = x + dx
+                if 0 <= xi < width:
+                    frame[yi, xi] = color
+
