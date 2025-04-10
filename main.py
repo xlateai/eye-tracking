@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
+from scipy.fft import dct
 
 import xospy
 from utils import get_webcam_frame, draw_cross
@@ -28,6 +29,13 @@ def attention_to_image(attention: torch.Tensor) -> np.ndarray:
     return rgba
 
 
+def dct_2d_numpy(x_np):
+    # Apply DCT along the last two dimensions (height and width)
+    x_np = dct(x_np, axis=-1, type=2, norm='ortho')  # width
+    x_np = dct(x_np, axis=-2, type=2, norm='ortho')  # height
+    return x_np
+
+
 class EfficientEyeTracker(nn.Module):
     def __init__(self, h, w):
         super().__init__()
@@ -36,6 +44,10 @@ class EfficientEyeTracker(nn.Module):
         self.col_weights = nn.Parameter(torch.ones(w))
 
     def forward(self, x):
+        # DCT x
+        x_dct = dct_2d_numpy(x.cpu().numpy())
+        x = torch.tensor(x_dct, device=x.device)
+
         gray = x.mean(dim=1, keepdim=True)  # Convert to grayscale
         weighted = gray.squeeze(1) * self.attention  # (batch, h, w)
 
