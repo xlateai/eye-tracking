@@ -7,7 +7,7 @@ from PIL import Image, ImageDraw, ImageFont
 import xospy
 from utils import get_webcam_frame, draw_cross
 from ball_pathing import Ball
-from model import EfficientEyeTracker
+from model import EfficientEyeTracker, AvgOptimizationTracker
 
 
 class PyApp(xospy.ApplicationBase):
@@ -18,7 +18,8 @@ class PyApp(xospy.ApplicationBase):
         self.ball = Ball(state.frame.width, state.frame.height)
 
         cam_height, cam_width = get_webcam_frame().shape[:2]
-        self.model = EfficientEyeTracker(cam_height, cam_width)
+        # self.model = EfficientEyeTracker(cam_height, cam_width)
+        self.model = AvgOptimizationTracker(cam_height, cam_width)
 
         self.step_count = 0
         self.training_enabled = True
@@ -50,8 +51,8 @@ class PyApp(xospy.ApplicationBase):
         x = torch.from_numpy(cam_frame).permute(2, 0, 1).float() / 250.0
         x = x.unsqueeze(0)  # (1, 3, H, W)
 
-        pred = self.model(x)  # (1, 2)
-        pred_x, pred_y = pred[0, 0], pred[0, 1]
+        pred = self.model.forward(x)  # (1, 2)
+        pred_x, pred_y = pred[0], pred[0]
 
         loss = None
         if self.training_enabled:
