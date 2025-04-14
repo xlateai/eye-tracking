@@ -49,62 +49,69 @@ class AvgOptimizationTracker:
         self.k = k
         self.h = h
         self.w = w
-        self.num_steps = 1e-6  # avoid divide-by-zero
+        self.num_steps = 1e-6
         self._avg_attention_sum = torch.ones(h, w)
+        self.training = True  # mimic PyTorch behavior
+
+    def train(self):
+        self.training = True
+
+    def eval(self):
+        self.training = False
 
     @property
     def avg_attention(self):
         return self._avg_attention_sum / self.num_steps
 
-    def forward(self, x, attention=None):
+    def forward(self, x):
         """
-        Apply attention to DCT(x), then project and return sigmoid prediction.
+        If in training mode, apply random k attention samples and return all predictions (k, 2).
+        Otherwise use average attention and return (2,)
         """
-
-        if attention is None:
-            attention = self.avg_attention
-
-        # Convert to DCT
+        # DCT once
         x_np = x.detach().cpu().numpy()
         x_dct = dct_2d_numpy(x_np)
         x_dct = torch.tensor(x_dct, device=x.device)
-
         gray = x_dct.mean(dim=0)  # (H, W)
-        weighted = gray * attention  # (H, W)
 
-        row_sum = weighted.mean(dim=1)  # (H,)
-        col_sum = weighted.mean(dim=0)  # (W,)
+        if self.training:
+            # Random attention: (k, H, W)
+            self._rand_attn = torch.rand(self.k, self.h, self.w, device=x.device)
+            weighted = gray.unsqueeze(0) * self._rand_attn  # (k, H, W)
 
-        row_output = row_sum.mean()
-        col_output = col_sum.mean()
+            row_output = weighted.mean(dim=2).mean(dim=-1)  # (k,)
+            col_output = weighted.mean(dim=3).mean(dim=-1)  # (k,)
 
-        return torch.sigmoid(torch.stack([col_output, row_output]))  # (2,)
+            preds = torch.stack([col_output, row_output], dim=1)  # (k, 2)
+            return torch.sigmoid(preds)
+        else:
+            attn = self.avg_attention.to(x.device)
+            weighted = gray * attn  # (H, W)
+
+            row_output = weighted.mean(dim=1)
+            col_output = weighted.mean(dim=0)
+
+            out = torch.sigmoid(torch.stack([col_output.mean(), row_output.mean()]))  # (2,)
+            return out
 
     def predict(self, x):
-        return self.forward(x, self.avg_attention)
+        self.eval()
+        return self.forward(x)
 
     def update(self, x, target):
-        """
-        Perform one training step using random samples + weighted avg based on signed error.
-        """
-        target = target.squeeze()
+        self.train()
 
-        rand_attention = torch.rand(self.k, self.h, self.w)
+        target = target.unsqueeze(-1)
 
-        preds = []
-        for i in range(self.k):
-            preds.append(self.forward(x, rand_attention[i]))
-
-        preds = torch.stack(preds, dim=0)  # (k, 2)
-
+        preds = self.forward(x)  # (k, 2), (k, H, W)
         errors = preds - target  # (k, 2)
-        scalar_errors = errors.mean(dim=1).unsqueeze(-1).unsqueeze(-1)  # (k, 1)
+        scalar_errors = errors.mean(dim=1).view(self.k, 1, 1)  # (k, 1, 1)
 
-        avg_attention = torch.mean(rand_attention * scalar_errors, dim=0)  # (H, W)
+        weighted_attn = self._rand_attn * scalar_errors  # (k, H, W)
+        avg_attention = weighted_attn.mean(dim=0)  # (H, W)
 
-        # Update running average
         self.num_steps += 1
-        self._avg_attention_sum += avg_attention
+        self._avg_attention_sum += avg_attention.detach()
 
         return scalar_errors.mean().item(), self.predict(x)
 

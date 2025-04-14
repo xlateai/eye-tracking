@@ -29,6 +29,11 @@ class PyApp(xospy.ApplicationBase):
         print("Training enabled:", self.training_enabled)
 
     def tick(self, state):
+        if self.training_enabled:
+            self.model.train()
+        else:
+            self.model.eval()
+
         self.tick_count += 1
         now = time.time()
         dt = now - self.last_time
@@ -52,7 +57,8 @@ class PyApp(xospy.ApplicationBase):
         x = x.unsqueeze(0)  # (1, 3, H, W)
 
         pred = self.model.forward(x)  # (1, 2)
-        pred_x, pred_y = pred[0], pred[0]
+        # pred_x, pred_y = pred[0], pred[0]
+        pred_x, pred_y = pred[0, 0].mean(), pred[0, 1].mean()
 
         loss = None
         if self.training_enabled:
