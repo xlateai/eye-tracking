@@ -5,8 +5,8 @@ from torch.utils.data import DataLoader
 class Net(nn.Module):
     def __init__(self):
         super().__init__()
-        self.fc1 = nn.Linear(28*28, 128, bias=False)
-        self.fc2 = nn.Linear(128, 10, bias=False)
+        self.fc1 = nn.Linear(28*28, 32, bias=False)
+        self.fc2 = nn.Linear(32, 10, bias=False)
         self.num_steps = 1
         self.sum_fc1 = torch.zeros_like(self.fc1.weight)
         self.sum_fc2 = torch.zeros_like(self.fc2.weight)
@@ -16,24 +16,31 @@ class Net(nn.Module):
         h = F.relu(x @ (self.fc1.weight.T if w1 is None else w1.T))
         return h @ (self.fc2.weight.T if w2 is None else w2.T)
 
-    def update(self, x, y, k=32):
-        x = x.view(-1, 28*28)
-        w1s = [torch.randn_like(self.fc1.weight) for _ in range(k)]
-        w2s = [torch.randn_like(self.fc2.weight) for _ in range(k)]
+    def update(self, x, y, k=16):
+        x = x.view(-1, 28*28)  # (B, 784)
+        B = x.size(0)
 
-        losses = []
-        for i in range(k):
-            logits = self.forward(x, w1s[i], w2s[i])
-            loss = F.cross_entropy(logits, y)
-            losses.append(loss.item())
+        w1s = torch.randn(k, *self.fc1.weight.shape, device=x.device)  # (k, 128, 784)
+        w2s = torch.randn(k, *self.fc2.weight.shape, device=x.device)  # (k, 10, 128)
 
-        # Convert to probabilities: lower loss = higher weight
-        losses = torch.tensor(losses)
-        probs = torch.softmax(-losses, dim=0)  # or: 1/loss and normalize manually
+        # Forward pass over k sampled models
+        h = F.relu(torch.einsum('b i, k o i -> k b o', x, w1s))        # (k, B, 128)
+        logits = torch.einsum('k b i, k o i -> k b o', h, w2s)         # (k, B, 10)
 
-        # Compute weighted average model
-        w1_avg = sum(p * w for p, w in zip(probs, w1s))
-        w2_avg = sum(p * w for p, w in zip(probs, w2s))
+        # Reshape logits: (k * B, 10), target: (k * B,)
+        logits = logits.view(-1, 10)                                   # (k*B, 10)
+        targets = y.repeat(k)                                          # (k*B,)
+
+        # Compute loss
+        losses = F.cross_entropy(logits, targets, reduction='none')   # (k*B,)
+        losses = losses.view(k, B).mean(dim=1)                         # (k,)
+
+        # Convert to softmax weights: lower loss = higher weight
+        probs = torch.softmax(-losses, dim=0)                          # (k,)
+
+        # Weighted average of sampled weights
+        w1_avg = torch.einsum('k, k o i -> o i', probs, w1s)           # (128, 784)
+        w2_avg = torch.einsum('k, k o i -> o i', probs, w2s)           # (10, 128)
 
         self.sum_fc1 += w1_avg
         self.sum_fc2 += w2_avg
