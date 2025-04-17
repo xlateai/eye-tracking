@@ -20,7 +20,7 @@ class PyApp(xospy.ApplicationBase):
 
         cam_height, cam_width = get_webcam_frame().shape[:2]
         # self.model = EfficientEyeTracker(cam_height, cam_width)
-        self.model = FMCTracker(cam_height, cam_width, lr=0.3)
+        self.model = FMCTracker(cam_height, cam_width, lr=1.0)
 
         self.step_count = 0
         self.training_enabled = True

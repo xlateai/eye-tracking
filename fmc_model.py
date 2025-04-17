@@ -131,7 +131,7 @@ class FMCTracker(nn.Module):
         # calculate the virtual rewards
         scores = _relativize_vector(-losses)
         distances = _relativize_vector(distances)
-        vrs = (scores ** 2) * distances
+        vrs = scores * distances
         pair_vrs = vrs[partners]
 
         # determine which agents will clone to their partners
