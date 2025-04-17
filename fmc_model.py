@@ -10,6 +10,25 @@ def dct_2d_numpy(x_np):
     return x_np
 
 
+# def _relativize_vector_np(vector: np.ndarray):
+#     std = vector.std()
+#     if std == 0:
+#         return np.ones(len(vector))
+#     standard = (vector - vector.mean()) / std
+#     standard[standard > 0] = np.log(1 + standard[standard > 0]) + 1
+#     standard[standard <= 0] = np.exp(standard[standard <= 0])
+#     return standard
+
+def _relativize_vector(vector: torch.Tensor):
+    std = vector.std()
+    if std == 0:
+        return torch.ones(len(vector))
+    standard = (vector - vector.mean()) / std
+    standard[standard > 0] = torch.log(1 + standard[standard > 0]) + 1
+    standard[standard <= 0] = torch.exp(standard[standard <= 0])
+    return standard
+
+
 class _SingleFMCTracker(nn.Module):
     def __init__(self, h, w):
         super().__init__()
@@ -67,15 +86,31 @@ class FMCTracker(nn.Module):
         distances = torch.zeros(self.k)
         for i in range(self.k):
             distances[i] = self.trackers[i].distance_to(self.trackers[partners[i]])
-        return distances
+        return partners, distances
     
     def update(self, x, target_xy):
+        # forward each agent and get their losses
         losses = torch.zeros(self.k)
         for i, tracker in enumerate(self.trackers):
             preds = tracker.forward(x)
             loss = tracker.loss_fn(preds.squeeze(), target_xy.squeeze())
             losses[i] = loss
-        print(losses)
+
+        partners, distances = self.calculate_distances()
+
+        # calculate the virtual rewards
+        scores = _relativize_vector(-losses)
+        distances = _relativize_vector(distances)
+        vrs = scores * distances
+        pair_vrs = vrs[partners]
+
+        probability_to_clone = (pair_vrs - vrs) / torch.where(vrs > 0, vrs, 1e-8)
+        r = torch.rand(self.k)
+        will_clone = (r < probability_to_clone).float()
+        print(probability_to_clone, will_clone, r)
+
+        # get the probability to clone
+
         return losses
     
 if __name__ == "__main__":
