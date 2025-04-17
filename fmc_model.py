@@ -29,6 +29,7 @@ def _relativize_vector(vector: torch.Tensor):
     return standard
 
 
+@torch.no_grad()
 class _SingleFMCTracker(nn.Module):
     def __init__(self, h, w):
         super().__init__()
@@ -37,6 +38,7 @@ class _SingleFMCTracker(nn.Module):
         self.col_weights = nn.Parameter(torch.rand(w))
         self.loss_fn = nn.L1Loss()
 
+    @torch.no_grad()
     def forward(self, x):
         x_np = x.detach().cpu().numpy()
         x_dct = dct_2d_numpy(x_np)
@@ -61,6 +63,7 @@ class _SingleFMCTracker(nn.Module):
     #     self.optimizer.step()
     #     return loss.item(), pred.detach()
     
+    @torch.no_grad()
     def distance_to(self, other: "_SingleFMCTracker"):
         # loop through all my paramters and calculate the distance to the other's parameters
         # using distance squared
@@ -68,7 +71,15 @@ class _SingleFMCTracker(nn.Module):
         for param, other_param in zip(self.parameters(), other.parameters()):
             distance += torch.sum((param - other_param) ** 2)
         return distance.item()
+    
+    @torch.no_grad()
+    def clone_to(self, other: "_SingleFMCTracker"):
+        # loop through all my paramters and clone the other's parameters
+        for param, other_param in zip(self.parameters(), other.parameters()):
+            param.data = other_param.data.clone()
+        return self
 
+@torch.no_grad()
 class FMCTracker(nn.Module):
     def __init__(self, h, w, k: int):
         """Initializes a population of FMC trackers.
@@ -79,6 +90,7 @@ class FMCTracker(nn.Module):
         self.k = k
         self.trackers = nn.ModuleList([_SingleFMCTracker(h, w) for _ in range(k)])
 
+    @torch.no_grad()
     def calculate_distances(self):
         # select random partners for each tracker
         partners = torch.randint(0, self.k, (self.k,))
@@ -88,6 +100,7 @@ class FMCTracker(nn.Module):
             distances[i] = self.trackers[i].distance_to(self.trackers[partners[i]])
         return partners, distances
     
+    @torch.no_grad()
     def update(self, x, target_xy):
         # forward each agent and get their losses
         losses = torch.zeros(self.k)
@@ -104,19 +117,21 @@ class FMCTracker(nn.Module):
         vrs = scores * distances
         pair_vrs = vrs[partners]
 
+        # determine which agents will clone to their partners
         probability_to_clone = (pair_vrs - vrs) / torch.where(vrs > 0, vrs, 1e-8)
         r = torch.rand(self.k)
         will_clone = (r < probability_to_clone).float()
         print(probability_to_clone, will_clone, r)
 
-        # get the probability to clone
-
-        return losses
+        # execute the cloning if will_clone
+        for i in range(self.k):
+            if will_clone[i] > 0:
+                self.trackers[i].clone_to(self.trackers[partners[i]])
     
 if __name__ == "__main__":
     # Example usage
     h, w = 64, 64
-    k = 5
+    k = 16
     model = FMCTracker(h, w, k)
     
     # Calculate distances between trackers
