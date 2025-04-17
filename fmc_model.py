@@ -34,13 +34,13 @@ class _SingleFMCTracker(nn.Module):
 
         return torch.sigmoid(torch.stack([col_output, row_output], dim=1))  # (B, 2)
 
-    def update(self, x, target_xy):
-        pred = self(x)
-        loss = self.loss_fn(pred.squeeze(), target_xy.squeeze())
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
-        return loss.item(), pred.detach()
+    # def update(self, x, target_xy):
+    #     pred = self(x)
+    #     loss = self.loss_fn(pred.squeeze(), target_xy.squeeze())
+    #     self.optimizer.zero_grad()
+    #     loss.backward()
+    #     self.optimizer.step()
+    #     return loss.item(), pred.detach()
     
     def distance_to(self, other: "_SingleFMCTracker"):
         # loop through all my paramters and calculate the distance to the other's parameters
@@ -69,7 +69,15 @@ class FMCTracker(nn.Module):
             distances[i] = self.trackers[i].distance_to(self.trackers[partners[i]])
         return distances
     
-
+    def update(self, x, target_xy):
+        losses = torch.zeros(self.k)
+        for i, tracker in enumerate(self.trackers):
+            preds = tracker.forward(x)
+            loss = tracker.loss_fn(preds.squeeze(), target_xy.squeeze())
+            losses[i] = loss
+        print(losses)
+        return losses
+    
 if __name__ == "__main__":
     # Example usage
     h, w = 64, 64
@@ -79,3 +87,10 @@ if __name__ == "__main__":
     # Calculate distances between trackers
     distances = model.calculate_distances()
     print("Distances:", distances)
+
+    # random input and target data (k)
+    x = torch.rand(1, 1, h, w)
+    target_xy = torch.rand(2)
+    print(x, target_xy)
+
+    model.update(x, target_xy)
