@@ -35,26 +35,33 @@ class _SingleFMCTracker(nn.Module):
         super().__init__()
         self.lr = lr
         self.attention = nn.Parameter(torch.rand(h, w))
-        self.row_weights = nn.Parameter(torch.rand(h))
-        self.col_weights = nn.Parameter(torch.rand(w))
+        # self.row_weights = nn.Parameter(torch.rand(h))
+        # self.col_weights = nn.Parameter(torch.rand(w))
         self.loss_fn = nn.L1Loss()
 
     @torch.no_grad()
     def forward(self, x):
-        x_np = x.detach().cpu().numpy()
-        x_dct = dct_2d_numpy(x_np)
-        x = torch.tensor(x_dct, device=x.device)
-
         gray = x.mean(dim=1, keepdim=True)  # (B, 1, H, W)
         weighted = gray.squeeze(1) * self.attention  # (B, H, W)
 
-        row_sum = weighted.mean(dim=2)  # (B, H)
-        col_sum = weighted.mean(dim=1)  # (B, W)
+        # row_sum = weighted.mean(dim=2)  # (B, H)
+        # col_sum = weighted.mean(dim=1)  # (B, W)
 
-        row_output = (row_sum * self.row_weights).mean(dim=1)  # (B,)
-        col_output = (col_sum * self.col_weights).mean(dim=1)  # (B,)
+        # row_output = (row_sum * self.row_weights).mean(dim=1)  # (B,)
+        # col_output = (col_sum * self.col_weights).mean(dim=1)  # (B,)
 
-        return torch.sigmoid(torch.stack([col_output, row_output], dim=1))  # (B, 2)
+        # return torch.sigmoid(torch.stack([col_output, row_output], dim=1))  # (B, 2)
+
+        # let's return the x and y prediction as the argmax / dimension_max for x and y in 
+        # the attention map
+        weighted = weighted.squeeze()
+        x_pred = torch.argmax(weighted.mean(dim=1), dim=0).float()  # (B, H)
+        y_pred = torch.argmax(weighted.mean(dim=0), dim=0).float()  # (B, W)
+        # divide by the height and width to get the normalized coordinates
+        print(x_pred, y_pred)
+        x_pred = x_pred / x.shape[2]
+        y_pred = y_pred / x.shape[3]
+        return torch.stack([x_pred, y_pred], dim=0)  # (B, 2)
 
     # def update(self, x, target_xy):
     #     pred = self(x)
@@ -109,8 +116,16 @@ class FMCTracker(nn.Module):
             distances[i] = self.trackers[i].distance_to(self.trackers[partners[i]])
         return partners, distances
     
+    def _preproc_x(self, x):
+        x_np = x.detach().cpu().numpy()
+        x_dct = dct_2d_numpy(x_np)
+        x = torch.tensor(x_dct, device=x.device)
+        return x
+    
     @torch.no_grad()
     def update(self, x, target_xy):
+        x = self._preproc_x(x)
+
         # forward each agent and get their losses
         losses = torch.zeros(self.k)
         for i, tracker in enumerate(self.trackers):
@@ -152,6 +167,7 @@ class FMCTracker(nn.Module):
         return losses[self.best_i].item()
 
     def forward(self, x):
+        x = self._preproc_x(x)
         # only use the best tracker for inference
         return self.trackers[self.best_i](x)
     

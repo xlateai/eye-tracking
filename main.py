@@ -53,7 +53,7 @@ class PyApp(xospy.ApplicationBase):
         x = x.unsqueeze(0)  # (1, 3, H, W)
 
         pred = self.model(x)  # (1, 2)
-        pred_x, pred_y = pred[0, 0], pred[0, 1]
+        pred_x, pred_y = pred[0], pred[1]
 
         loss = None
         if self.training_enabled:
