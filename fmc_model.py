@@ -31,8 +31,9 @@ def _relativize_vector(vector: torch.Tensor):
 
 @torch.no_grad()
 class _SingleFMCTracker(nn.Module):
-    def __init__(self, h, w):
+    def __init__(self, h, w, lr: float):
         super().__init__()
+        self.lr = lr
         self.attention = nn.Parameter(torch.rand(h, w))
         self.row_weights = nn.Parameter(torch.rand(h))
         self.col_weights = nn.Parameter(torch.rand(w))
@@ -80,15 +81,15 @@ class _SingleFMCTracker(nn.Module):
         return self
     
     @torch.no_grad()
-    def perturb(self, magnitude: float=1):
+    def perturb(self):
         # basically, just add some random noise to our paramters centered around 1
         for param in self.parameters():
-            param.data = param.data + (torch.randn_like(param) * magnitude)
+            param.data = param.data + (torch.randn_like(param) * self.lr)
         return self
 
 @torch.no_grad()
 class FMCTracker(nn.Module):
-    def __init__(self, h, w, k: int):
+    def __init__(self, h, w, k: int=16, lr: float=0.1):
         """Initializes a population of FMC trackers.
         """
 
@@ -96,7 +97,7 @@ class FMCTracker(nn.Module):
 
         self.best_i = 0  # just the first model upon initialization
         self.k = k
-        self.trackers = nn.ModuleList([_SingleFMCTracker(h, w) for _ in range(k)])
+        self.trackers = nn.ModuleList([_SingleFMCTracker(h, w, lr=lr) for _ in range(k)])
 
     @torch.no_grad()
     def calculate_distances(self):
@@ -125,7 +126,7 @@ class FMCTracker(nn.Module):
         # calculate the virtual rewards
         scores = _relativize_vector(-losses)
         distances = _relativize_vector(distances)
-        vrs = scores * distances
+        vrs = (scores ** 2) * distances
         pair_vrs = vrs[partners]
 
         # determine which agents will clone to their partners
@@ -147,6 +148,9 @@ class FMCTracker(nn.Module):
             if will_clone[i] == 0:
                 self.trackers[i].perturb()
 
+        # return the best loss
+        return losses[self.best_i].item()
+
     def forward(self, x):
         # only use the best tracker for inference
         return self.trackers[self.best_i](x)
@@ -155,7 +159,7 @@ if __name__ == "__main__":
     # Example usage
     h, w = 64, 64
     k = 16
-    model = FMCTracker(h, w, k)
+    model = FMCTracker(h, w, k, lr=1.0)
     
     # Calculate distances between trackers
     # distances = model.calculate_distances()

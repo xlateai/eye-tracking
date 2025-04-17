@@ -7,7 +7,8 @@ from PIL import Image, ImageDraw, ImageFont
 import xospy
 from utils import get_webcam_frame, draw_cross
 from ball_pathing import Ball
-from model import EfficientEyeTracker
+# from model import EfficientEyeTracker
+from fmc_model import FMCTracker
 
 
 class PyApp(xospy.ApplicationBase):
@@ -18,7 +19,8 @@ class PyApp(xospy.ApplicationBase):
         self.ball = Ball(state.frame.width, state.frame.height)
 
         cam_height, cam_width = get_webcam_frame().shape[:2]
-        self.model = EfficientEyeTracker(cam_height, cam_width)
+        # self.model = EfficientEyeTracker(cam_height, cam_width)
+        self.model = FMCTracker(cam_height, cam_width, lr=0.3)
 
         self.step_count = 0
         self.training_enabled = True
@@ -56,7 +58,7 @@ class PyApp(xospy.ApplicationBase):
         loss = None
         if self.training_enabled:
             target_xy = torch.tensor([[self.ball.pos[0] / width, self.ball.pos[1] / height]], dtype=torch.float32)
-            loss, _ = self.model.update(x, target_xy)
+            loss = self.model.update(x, target_xy)
             self.step_count += 1
 
         px = math.floor(float(pred_x.item()) * width)
