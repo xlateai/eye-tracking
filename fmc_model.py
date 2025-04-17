@@ -41,10 +41,6 @@ class _SingleFMCTracker(nn.Module):
 
     @torch.no_grad()
     def forward(self, x):
-        x_np = x.detach().cpu().numpy()
-        x_dct = dct_2d_numpy(x_np)
-        x = torch.tensor(x_dct, device=x.device)
-
         gray = x.mean(dim=1, keepdim=True)  # (B, 1, H, W)
         weighted = gray.squeeze(1) * self.attention  # (B, H, W)
 
@@ -110,7 +106,16 @@ class FMCTracker(nn.Module):
         return partners, distances
     
     @torch.no_grad()
+    def _preproc(self, x):
+        x_np = x.detach().cpu().numpy()
+        x_dct = dct_2d_numpy(x_np)
+        x = torch.tensor(x_dct, device=x.device)
+        return x
+    
+    @torch.no_grad()
     def update(self, x, target_xy):
+        x = self._preproc(x)
+
         # forward each agent and get their losses
         losses = torch.zeros(self.k)
         for i, tracker in enumerate(self.trackers):
@@ -152,6 +157,7 @@ class FMCTracker(nn.Module):
         return losses[self.best_i].item()
 
     def forward(self, x):
+        x = self._preproc(x)
         # only use the best tracker for inference
         return self.trackers[self.best_i](x)
     
