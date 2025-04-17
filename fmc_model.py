@@ -4,6 +4,8 @@ import numpy as np
 from scipy.fft import dct
 from collections import deque
 
+UPDATE_EVERY = 8
+TIME_HORIZON = 8
 
 def dct_2d_numpy(x_np):
     x_np = dct(x_np, axis=-1, type=2, norm='ortho')  # width
@@ -32,7 +34,7 @@ def _relativize_vector(vector: torch.Tensor):
 
 @torch.no_grad()
 class _SingleFMCTracker(nn.Module):
-    def __init__(self, h, w, lr: float, time_horizon: int = 10):
+    def __init__(self, h, w, lr: float, time_horizon: int = TIME_HORIZON):
         super().__init__()
         self.lr = lr
         self.attention = nn.Parameter(torch.rand(h, w))
@@ -92,6 +94,7 @@ class FMCTracker(nn.Module):
         self.trackers = nn.ModuleList([
             _SingleFMCTracker(h, w, lr=lr, time_horizon=time_horizon) for _ in range(k)
         ])
+        self.step_i = 0
 
     def calculate_distances(self):
         partners = torch.randint(0, self.k, (self.k,))
@@ -106,6 +109,8 @@ class FMCTracker(nn.Module):
         return torch.tensor(x_dct, device=x.device)
 
     def update(self, x, target_xy):
+        self.step_i += 1
+
         x = self._preproc(x)
 
         losses = torch.zeros(self.k)
@@ -113,31 +118,32 @@ class FMCTracker(nn.Module):
             tracker.update_loss(x, target_xy)
             losses[i] = tracker.smoothed_loss()
 
-        self.best_i = torch.argmin(losses)
-        print("Best agent:", self.best_i.item(), "Smoothed Loss:", losses[self.best_i].item())
+        if self.step_i % UPDATE_EVERY == 0:
+            self.best_i = torch.argmin(losses)
+            print("Best agent:", self.best_i.item(), "Smoothed Loss:", losses[self.best_i].item())
 
-        topk_indices = torch.topk(losses, self.top_k, largest=False).indices.tolist()
-        partners, distances = self.calculate_distances()
+            topk_indices = torch.topk(losses, self.top_k, largest=False).indices.tolist()
+            partners, distances = self.calculate_distances()
 
-        scores = _relativize_vector(-losses)
-        distances = _relativize_vector(distances)
-        vrs = scores * distances
-        pair_vrs = vrs[partners]
+            scores = _relativize_vector(-losses)
+            distances = _relativize_vector(distances)
+            vrs = scores * distances
+            pair_vrs = vrs[partners]
 
-        probability_to_clone = (pair_vrs - vrs) / torch.where(vrs > 0, vrs, 1e-8)
-        r = torch.rand(self.k)
-        will_clone = (r < probability_to_clone).float()
+            probability_to_clone = (pair_vrs - vrs) / torch.where(vrs > 0, vrs, 1e-8)
+            r = torch.rand(self.k)
+            will_clone = (r < probability_to_clone).float()
 
-        for i in topk_indices:
-            will_clone[i] = 0
+            for i in topk_indices:
+                will_clone[i] = 0
 
-        for i in range(self.k):
-            if will_clone[i] > 0:
-                self.trackers[i].clone_to(self.trackers[partners[i]])
+            for i in range(self.k):
+                if will_clone[i] > 0:
+                    self.trackers[i].clone_to(self.trackers[partners[i]])
 
-        for i in range(self.k):
-            if i not in topk_indices and will_clone[i] == 0:
-                self.trackers[i].perturb()
+            for i in range(self.k):
+                if i not in topk_indices and will_clone[i] == 0:
+                    self.trackers[i].perturb()
 
         return losses[self.best_i].item()
     
