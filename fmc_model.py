@@ -78,6 +78,13 @@ class _SingleFMCTracker(nn.Module):
         for param, other_param in zip(self.parameters(), other.parameters()):
             param.data = other_param.data.clone()
         return self
+    
+    @torch.no_grad()
+    def perturb(self, magnitude: float=1):
+        # basically, just add some random noise to our paramters centered around 1
+        for param in self.parameters():
+            param.data = param.data + (torch.randn_like(param) * magnitude)
+        return self
 
 @torch.no_grad()
 class FMCTracker(nn.Module):
@@ -94,7 +101,7 @@ class FMCTracker(nn.Module):
     def calculate_distances(self):
         # select random partners for each tracker
         partners = torch.randint(0, self.k, (self.k,))
-        print(partners)
+        # print(partners)
         distances = torch.zeros(self.k)
         for i in range(self.k):
             distances[i] = self.trackers[i].distance_to(self.trackers[partners[i]])
@@ -109,6 +116,9 @@ class FMCTracker(nn.Module):
             loss = tracker.loss_fn(preds.squeeze(), target_xy.squeeze())
             losses[i] = loss
 
+        best_i = torch.argmin(losses)
+        print("Best agent:", best_i.item(), "Loss:", losses[best_i].item())
+
         partners, distances = self.calculate_distances()
 
         # calculate the virtual rewards
@@ -121,12 +131,20 @@ class FMCTracker(nn.Module):
         probability_to_clone = (pair_vrs - vrs) / torch.where(vrs > 0, vrs, 1e-8)
         r = torch.rand(self.k)
         will_clone = (r < probability_to_clone).float()
-        print(probability_to_clone, will_clone, r)
+        # print(probability_to_clone, will_clone, r)
+
+        # never clone the best
+        will_clone[best_i] = 0
 
         # execute the cloning if will_clone
         for i in range(self.k):
             if will_clone[i] > 0:
                 self.trackers[i].clone_to(self.trackers[partners[i]])
+
+        # randomly perturb all the trackers, except the best
+        for i in range(self.k):
+            if will_clone[i] == 0:
+                self.trackers[i].perturb()
     
 if __name__ == "__main__":
     # Example usage
@@ -135,12 +153,13 @@ if __name__ == "__main__":
     model = FMCTracker(h, w, k)
     
     # Calculate distances between trackers
-    distances = model.calculate_distances()
-    print("Distances:", distances)
+    # distances = model.calculate_distances()
+    # print("Distances:", distances)
 
     # random input and target data (k)
     x = torch.rand(1, 1, h, w)
     target_xy = torch.rand(2)
-    print(x, target_xy)
+    # print(x, target_xy)
 
-    model.update(x, target_xy)
+    for _ in range(100):
+        model.update(x, target_xy)
