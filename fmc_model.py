@@ -94,6 +94,7 @@ class FMCTracker(nn.Module):
 
         super().__init__()
 
+        self.best_i = 0  # just the first model upon initialization
         self.k = k
         self.trackers = nn.ModuleList([_SingleFMCTracker(h, w) for _ in range(k)])
 
@@ -116,8 +117,8 @@ class FMCTracker(nn.Module):
             loss = tracker.loss_fn(preds.squeeze(), target_xy.squeeze())
             losses[i] = loss
 
-        best_i = torch.argmin(losses)
-        print("Best agent:", best_i.item(), "Loss:", losses[best_i].item())
+        self.best_i = torch.argmin(losses)
+        print("Best agent:", self.best_i.item(), "Loss:", losses[self.best_i].item())
 
         partners, distances = self.calculate_distances()
 
@@ -134,7 +135,7 @@ class FMCTracker(nn.Module):
         # print(probability_to_clone, will_clone, r)
 
         # never clone the best
-        will_clone[best_i] = 0
+        will_clone[self.best_i] = 0
 
         # execute the cloning if will_clone
         for i in range(self.k):
@@ -145,6 +146,10 @@ class FMCTracker(nn.Module):
         for i in range(self.k):
             if will_clone[i] == 0:
                 self.trackers[i].perturb()
+
+    def forward(self, x):
+        # only use the best tracker for inference
+        return self.trackers[self.best_i](x)
     
 if __name__ == "__main__":
     # Example usage
@@ -163,3 +168,5 @@ if __name__ == "__main__":
 
     for _ in range(100):
         model.update(x, target_xy)
+
+    print(model(x), target_xy)
