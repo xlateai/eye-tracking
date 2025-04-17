@@ -85,38 +85,45 @@ class _SingleFMCTracker(nn.Module):
 
 @torch.no_grad()
 class FMCTracker(nn.Module):
-    def __init__(self, h, w, k: int=16, lr: float=0.1):
-        """Initializes a population of FMC trackers.
+    def __init__(self, h, w, k: int = 16, lr: float = 0.1, top_k: int = 3):
         """
+        Initializes a population of FMC trackers.
 
+        Args:
+            h (int): Height of the input.
+            w (int): Width of the input.
+            k (int): Number of trackers.
+            lr (float): Learning rate for perturbation.
+            top_k (int): Number of top trackers to freeze from cloning and perturbation.
+        """
         super().__init__()
 
-        self.best_i = 0  # just the first model upon initialization
+        if top_k >= k:
+            raise ValueError(f"`top_k` must be less than `k`. Got top_k={top_k}, k={k}")
+
+        self.best_i = 0
         self.k = k
+        self.top_k = top_k
         self.trackers = nn.ModuleList([_SingleFMCTracker(h, w, lr=lr) for _ in range(k)])
 
     @torch.no_grad()
     def calculate_distances(self):
-        # select random partners for each tracker
         partners = torch.randint(0, self.k, (self.k,))
-        # print(partners)
         distances = torch.zeros(self.k)
         for i in range(self.k):
             distances[i] = self.trackers[i].distance_to(self.trackers[partners[i]])
         return partners, distances
-    
+
     @torch.no_grad()
     def _preproc(self, x):
         x_np = x.detach().cpu().numpy()
         x_dct = dct_2d_numpy(x_np)
-        x = torch.tensor(x_dct, device=x.device)
-        return x
-    
+        return torch.tensor(x_dct, device=x.device)
+
     @torch.no_grad()
     def update(self, x, target_xy):
         x = self._preproc(x)
 
-        # forward each agent and get their losses
         losses = torch.zeros(self.k)
         for i, tracker in enumerate(self.trackers):
             preds = tracker.forward(x)
@@ -126,40 +133,39 @@ class FMCTracker(nn.Module):
         self.best_i = torch.argmin(losses)
         print("Best agent:", self.best_i.item(), "Loss:", losses[self.best_i].item())
 
+        topk_indices = torch.topk(losses, self.top_k, largest=False).indices.tolist()
+
         partners, distances = self.calculate_distances()
 
-        # calculate the virtual rewards
         scores = _relativize_vector(-losses)
         distances = _relativize_vector(distances)
         vrs = scores * distances
         pair_vrs = vrs[partners]
 
-        # determine which agents will clone to their partners
         probability_to_clone = (pair_vrs - vrs) / torch.where(vrs > 0, vrs, 1e-8)
         r = torch.rand(self.k)
         will_clone = (r < probability_to_clone).float()
-        # print(probability_to_clone, will_clone, r)
 
-        # never clone the best
-        will_clone[self.best_i] = 0
+        # prevent cloning into any of the top_k agents
+        for i in topk_indices:
+            will_clone[i] = 0
 
-        # execute the cloning if will_clone
+        # execute cloning
         for i in range(self.k):
             if will_clone[i] > 0:
                 self.trackers[i].clone_to(self.trackers[partners[i]])
 
-        # randomly perturb all the trackers, except the best
+        # perturb only if not frozen
         for i in range(self.k):
-            if will_clone[i] == 0:
+            if i not in topk_indices and will_clone[i] == 0:
                 self.trackers[i].perturb()
 
-        # return the best loss
         return losses[self.best_i].item()
 
     def forward(self, x):
         x = self._preproc(x)
-        # only use the best tracker for inference
         return self.trackers[self.best_i](x)
+
     
 if __name__ == "__main__":
     # Example usage
